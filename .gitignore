@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Database — not synced via git (too large, binary, no merge)
+memory.db
+memory.db-wal
+memory.db-shm
+
+# Secrets
+.env
+config_private.php
