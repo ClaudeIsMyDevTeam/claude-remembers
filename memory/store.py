@@ -1,5 +1,6 @@
 import math
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -21,7 +22,24 @@ _DB_PATH = os.environ.get(
 )
 _DB_PATH = os.path.abspath(_DB_PATH)
 
-db.init_db(_DB_PATH)
+# Initialize DB and run startup decay in a background thread so the MCP
+# initialize handshake isn't blocked by the initial Turso sync (which can
+# take >60 s on first run when building a fresh local replica).
+_ready = threading.Event()
+
+
+def _background_startup() -> None:
+    db.init_db(_DB_PATH)
+    _ready.set()
+    decay_all()
+
+
+threading.Thread(target=_background_startup, daemon=True).start()
+
+
+def _wait_ready() -> None:
+    """Block until DB init is complete. Called by every public function."""
+    _ready.wait()
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +85,7 @@ def remember(
     decay_rate: Optional[float] = None,
 ) -> str:
     """Store a new memory. Returns the new memory's id."""
+    _wait_ready()
     confidence = max(0.0, min(1.0, confidence))
     now = datetime.utcnow()
     memory = Memory(
@@ -89,6 +108,7 @@ def recall(query: str, top_k: int = 5) -> list[tuple[Memory, float]]:
     Scores combine semantic similarity and effective confidence.
     Returns (Memory, score) tuples sorted by descending score.
     """
+    _wait_ready()
     query_vec = embeddings.encode(query)
     candidates = db.get_all_active(_DB_PATH)
     if not candidates:
@@ -107,6 +127,7 @@ def recall(query: str, top_k: int = 5) -> list[tuple[Memory, float]]:
 
 def forget(id: str) -> None:
     """Mark a memory as forgotten. Row is retained for audit purposes."""
+    _wait_ready()
     db.update_status(_DB_PATH, id, MemoryStatus.FORGOTTEN)
 
 
@@ -114,6 +135,7 @@ def update(id: str, new_content: str, source: Optional[str] = None) -> str:
     """Correct a memory. Marks the original as CORRECTED and inserts a new record.
     Returns the new memory's id.
     """
+    _wait_ready()
     original = db.get_by_id(_DB_PATH, id)
     if original is None:
         raise ValueError(f"No memory found with id {id!r}")
@@ -144,6 +166,7 @@ def confirm(id: str) -> Memory:
     Resets decay timer, bumps confidence by 10%, increments confirmed_count.
     Returns the updated memory.
     """
+    _wait_ready()
     memory = db.get_by_id(_DB_PATH, id)
     if memory is None:
         raise ValueError(f"No memory found with id {id!r}")
@@ -197,8 +220,5 @@ def decay_all() -> int:
 
 def get_stale() -> list[Memory]:
     """Return memories that have decayed below the confidence floor."""
+    _wait_ready()
     return db.get_stale(_DB_PATH)
-
-
-# Run decay on every session start (guarded internally against running too often)
-decay_all()
