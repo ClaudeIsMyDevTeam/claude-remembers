@@ -30,7 +30,18 @@ def _open(path: str):
     """Open a connection. For Turso: creates embedded replica and syncs from cloud."""
     if _USE_TURSO:
         conn = libsql.connect(path, sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
-        conn.sync()
+        try:
+            conn.sync()
+        except ValueError:
+            # Stale WAL artifacts from unclean shutdown — delete local replica and retry.
+            # Safe because Turso cloud is the source of truth.
+            conn.close()
+            for ext in ("-wal", "-shm", "-info"):
+                artifact = path + ext
+                if os.path.exists(artifact):
+                    os.remove(artifact)
+            conn = libsql.connect(path, sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
+            conn.sync()
         return conn
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row

@@ -1,13 +1,18 @@
+import threading
+
 import numpy as np
 
 _model = None
+_model_lock = threading.Lock()
 
 
 def _get_model():
     global _model
     if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        with _model_lock:
+            if _model is None:
+                from sentence_transformers import SentenceTransformer
+                _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
 
 

@@ -31,6 +31,7 @@ _ready = threading.Event()
 def _background_startup() -> None:
     db.init_db(_DB_PATH)
     _ready.set()
+    embeddings.encode("warmup")  # Pre-warm model so first recall isn't slow
     decay_all()
 
 
