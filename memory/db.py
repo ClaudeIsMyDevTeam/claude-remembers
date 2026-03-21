@@ -88,6 +88,15 @@ def _fetchall(cursor) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def init_db(path: str) -> None:
+    if _USE_TURSO:
+        # Always start with a clean local replica so we get a full snapshot from
+        # Turso cloud.  Stale -info files (replication cursor) can cause sync()
+        # to skip old frames and leave the local DB without the schema even though
+        # the cloud has it.  Turso is the source of truth, so this is always safe.
+        for ext in ("", "-wal", "-shm", "-info"):
+            artifact = path + ext
+            if os.path.exists(artifact):
+                os.remove(artifact)
     conn = _open(path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS memories (
