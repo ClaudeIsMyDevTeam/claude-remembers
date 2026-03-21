@@ -1,4 +1,5 @@
 import os
+import sys
 import sqlite3
 import numpy as np
 from datetime import datetime
@@ -29,13 +30,16 @@ EMBEDDING_DTYPE = np.float32
 def _open(path: str):
     """Open a connection. For Turso: creates embedded replica and syncs from cloud."""
     if _USE_TURSO:
+        print(f"[memory] _open turso path={path}", file=sys.stderr)
         conn = libsql.connect(path, sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
         try:
             conn.sync()
-        except Exception:
+            print("[memory] sync ok", file=sys.stderr)
+        except Exception as e:
             # Stale/corrupted WAL artifacts from unclean shutdown — delete local replica and retry.
             # Catches ValueError (Linux libsql) and other error types (Mac libsql may differ).
             # Safe because Turso cloud is the source of truth.
+            print(f"[memory] sync failed ({type(e).__name__}: {e}), cleaning up and retrying", file=sys.stderr)
             conn.close()
             for ext in ("", "-wal", "-shm", "-info"):
                 artifact = path + ext
@@ -43,6 +47,7 @@ def _open(path: str):
                     os.remove(artifact)
             conn = libsql.connect(path, sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
             conn.sync()
+            print("[memory] retry sync ok", file=sys.stderr)
         return conn
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row

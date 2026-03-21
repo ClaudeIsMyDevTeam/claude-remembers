@@ -1,5 +1,6 @@
 import math
 import os
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -29,7 +30,15 @@ _ready = threading.Event()
 
 
 def _background_startup() -> None:
-    db.init_db(_DB_PATH)
+    try:
+        print(f"[memory] starting init_db, path={_DB_PATH}", file=sys.stderr)
+        db.init_db(_DB_PATH)
+        print("[memory] init_db complete", file=sys.stderr)
+    except Exception as e:
+        print(f"[memory] init_db FAILED: {e}", file=sys.stderr)
+        # Set ready anyway so tools return an error instead of hanging forever
+        _ready.set()
+        return
     _ready.set()
     embeddings.encode("warmup")  # Pre-warm model so first recall isn't slow
     decay_all()
