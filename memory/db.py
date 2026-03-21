@@ -32,11 +32,12 @@ def _open(path: str):
         conn = libsql.connect(path, sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
         try:
             conn.sync()
-        except ValueError:
-            # Stale WAL artifacts from unclean shutdown — delete local replica and retry.
+        except Exception:
+            # Stale/corrupted WAL artifacts from unclean shutdown — delete local replica and retry.
+            # Catches ValueError (Linux libsql) and other error types (Mac libsql may differ).
             # Safe because Turso cloud is the source of truth.
             conn.close()
-            for ext in ("-wal", "-shm", "-info"):
+            for ext in ("", "-wal", "-shm", "-info"):
                 artifact = path + ext
                 if os.path.exists(artifact):
                     os.remove(artifact)
